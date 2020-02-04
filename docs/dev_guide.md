@@ -1,0 +1,1 @@
+# 1、idea创建gradle项目，按照[教程](https://www.jetbrains.com/help/idea/gradle.html)编辑好gradle项目结构
