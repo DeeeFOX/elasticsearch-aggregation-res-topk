@@ -33,7 +33,7 @@ noticeFile = rootProject.file('README.md')
 esplugin {
     name 'elasticsearch-aggregation-res-topk'
     description 'Sort and choose top K to return of aggregations result'
-    classname 'org.opendatasoft.elasticsearch.plugin.PathHierarchyAggregation'
+    classname 'com.matrix.mars.elasticsearch.plugin.BucketTopkAggregation' // plugin description class path
     licenseFile = rootProject.file('LICENSE')
     noticeFile = rootProject.file('README.md')
 }
@@ -55,7 +55,8 @@ licenseHeaders.enabled = false
 
 // Use elasticsearch checkstyle rules
 checkstyleTest.enabled = true
+checkstyleMain.enabled = true
 
-dependencyLicenses.enabled = true
+dependencyLicenses.enabled = false
 
-thirdPartyAudit.enabled = true
+thirdPartyAudit.enabled = false

@@ -5,9 +5,6 @@ import com.matrix.mars.elasticsearch.search.aggregations.bucket.BucketTopkPipeli
 import com.matrix.mars.elasticsearch.search.aggregations.bucket.InternalBucketTopk;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.plugins.SearchPlugin;
-import org.elasticsearch.search.aggregations.pipeline.DerivativePipelineAggregationBuilder;
-import org.elasticsearch.search.aggregations.pipeline.DerivativePipelineAggregator;
-import org.elasticsearch.search.aggregations.pipeline.InternalDerivative;
 
 import java.util.ArrayList;
 import java.util.List;

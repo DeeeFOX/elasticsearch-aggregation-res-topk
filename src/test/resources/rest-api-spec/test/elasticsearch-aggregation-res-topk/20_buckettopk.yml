@@ -1,0 +1,547 @@
+setup:
+  - do:
+      indices.create:
+        index: "test_tsdb12_yoyo"
+        body:
+          settings:
+            index:
+              mapping:
+                total_fields:
+                  limit: '8000'
+              refresh_interval: 4s
+              translog:
+                sync_interval: 4s
+                durability: async
+              auto_expand_replicas: 0-0
+              max_result_window: '10241024'
+              requests:
+                cache:
+                  enable: 'true'
+              sort:
+                field: ts
+                order: desc
+              store:
+                type: mmapfs
+                preload:
+                  - doc
+                  - dvd
+              unassigned:
+                node_left:
+                  delayed_timeout: 1m
+              analysis:
+                normalizer:
+                  case_insensitive_normalizer:
+                    filter:
+                      - lowercase
+                    type: custom
+                    char_filter: []
+              number_of_replicas: '0'
+              queries:
+                cache:
+                  enabled: 'true'
+              codec: best_compression
+              search:
+                slowlog:
+                  level: info
+                  threshold:
+                    fetch:
+                      warn: 1s
+                      trace: 200ms
+                      debug: 500ms
+                      info: 800ms
+                    query:
+                      warn: 10s
+                      trace: 500ms
+                      debug: 2s
+                      info: 5s
+              number_of_shards: '1'
+              routing_partition_size: '1'
+              similarity:
+                default:
+                  type: boolean
+          mappings:
+            _routing:
+              required: true
+            _field_names:
+              enabled: false
+            _source:
+              excludes:
+                - tag.*
+                - tag
+                - ts
+                - metric
+                - "@timestamp"
+                - field.*
+                - field
+              includes:
+                - meta.actkey
+                - meta.fname
+            dynamic: false
+            dynamic_templates:
+              - metas:
+                  path_match: meta.*
+                  mapping:
+                    eager_global_ordinals: false
+                    normalizer: case_insensitive_normalizer
+                    norms: false
+                    similarity: boolean
+                    index: false
+                    store: false
+                    type: keyword
+                    index_options: docs
+                    doc_values: false
+              - fields:
+                  path_match: field.*
+                  mapping:
+                    index: false
+                    store: false
+                    type: float
+                    doc_values: true
+              - tags:
+                  path_match: tag.*
+                  mapping:
+                    eager_global_ordinals: true
+                    normalizer: case_insensitive_normalizer
+                    norms: false
+                    similarity: boolean
+                    index: true
+                    store: false
+                    type: keyword
+                    index_options: docs
+                    doc_values: true
+            properties:
+              "@timestamp":
+                similarity: boolean
+                format: strict_date_optional_time||epoch_second
+                index: false
+                store: false
+                type: date
+                index_options: docs
+                doc_values: true
+              field:
+                dynamic: true
+                properties:
+                  value:
+                    index: false
+                    store: false
+                    type: float
+                    doc_values: true
+              metric:
+                eager_global_ordinals: true
+                normalizer: case_insensitive_normalizer
+                norms: false
+                similarity: boolean
+                index: true
+                store: false
+                type: keyword
+                index_options: docs
+                doc_values: true
+              meta:
+                dynamic: true
+                properties:
+                  raw_ts:
+                    similarity: boolean
+                    index: false
+                    store: false
+                    type: date
+                    index_options: docs
+                    doc_values: true
+                  fname:
+                    eager_global_ordinals: false
+                    norms: false
+                    similarity: boolean
+                    index: false
+                    store: false
+                    type: keyword
+                    index_options: docs
+                    doc_values: false
+                  begin_timestamp:
+                    similarity: boolean
+                    index: false
+                    store: false
+                    type: date
+                    index_options: docs
+                    doc_values: true
+                  actkey:
+                    eager_global_ordinals: false
+                    norms: false
+                    similarity: boolean
+                    index: false
+                    store: false
+                    type: keyword
+                    index_options: docs
+                    doc_values: false
+                  end_timestamp:
+                    similarity: boolean
+                    index: false
+                    store: false
+                    type: date
+                    index_options: docs
+                    doc_values: true
+                  cmpkey:
+                    eager_global_ordinals: false
+                    norms: false
+                    similarity: boolean
+                    index: false
+                    store: false
+                    type: keyword
+                    index_options: docs
+                    doc_values: true
+                  operator:
+                    eager_global_ordinals: false
+                    normalizer: case_insensitive_normalizer
+                    norms: false
+                    similarity: boolean
+                    index: false
+                    store: false
+                    type: keyword
+                    index_options: docs
+                    doc_values: false
+              tag:
+                dynamic: true
+                properties:
+                  gameid:
+                    eager_global_ordinals: true
+                    normalizer: case_insensitive_normalizer
+                    norms: false
+                    similarity: boolean
+                    index: true
+                    store: false
+                    type: keyword
+                    index_options: docs
+                    doc_values: true
+                  ip:
+                    eager_global_ordinals: true
+                    normalizer: case_insensitive_normalizer
+                    norms: false
+                    similarity: boolean
+                    index: true
+                    store: false
+                    type: keyword
+                    index_options: docs
+                    doc_values: true
+              ts:
+                similarity: boolean
+                format: strict_date_optional_time||epoch_second
+                index: true
+                store: false
+                type: date
+                index_options: docs
+                doc_values: true
+          aliases:
+            test_tsdb_alias: {}
+  - do:
+      cluster.health:
+        wait_for_status: green
+
+---
+"Test with tsdb data":
+  - do:
+      indices.refresh: {}
+  - do:
+      index:
+        index: "test_tsdb12_yoyo"
+        id: "02B521ed703599128"
+        routing: "yo_kakaabc_count"
+        body: { "field": { "count": 16.0 },
+                "metric": "yo_kakaabc_count",
+                "tag": {
+                  "code": "200",
+                  "login_gate": "___MISS___",
+                  "url": "/askmama",
+                  "ip": "192.168.0.1",
+                  "hostname": "localhost",
+                  "subcode": "1",
+                  "gid": "k11",
+                  "ff_gate": "___MISS___",
+                  "type": "formal",
+                  "method": "GET"
+                },
+                "ts": "2020-01-01T00:59:19.128Z"}
+  - do:
+      index:
+        index: "test_tsdb12_yoyo"
+        id: "02B521ed703599127"
+        routing: "yo_kakaabc_count"
+        body: { "field": { "count": 16.0 },
+                "metric": "yo_kakaabc_count",
+                "tag": {
+                  "code": "200",
+                  "login_gate": "___MISS___",
+                  "url": "/askmama",
+                  "ip": "192.168.1.1",
+                  "hostname": "localhost",
+                  "subcode": "1",
+                  "gid": "k11",
+                  "ff_gate": "___MISS___",
+                  "type": "formal",
+                  "method": "GET"
+                },
+                "ts": "2020-01-01T00:59:29.128Z"}
+  - do:
+      index:
+        index: "test_tsdb12_yoyo"
+        id: "02B521ed703599126"
+        routing: "yo_kakaabc_count"
+        body: { "field": { "count": 16.0 },
+                "metric": "yo_kakaabc_count",
+                "tag": {
+                  "code": "400",
+                  "login_gate": "___MISS___",
+                  "url": "/askmama",
+                  "ip": "192.168.0.1",
+                  "hostname": "localhost",
+                  "subcode": "1",
+                  "gid": "k11",
+                  "ff_gate": "___MISS___",
+                  "type": "formal",
+                  "method": "GET"
+                },
+                "ts": "2020-01-01T00:59:39.128Z"}
+  - do:
+      index:
+        index: "test_tsdb12_yoyo"
+        id: "02B521ed703599125"
+        routing: "yo_kakaabc_count"
+        body: { "field": { "count": 16.0 },
+                "metric": "yo_kakaabc_count",
+                "tag": {
+                  "code": "400",
+                  "login_gate": "___MISS___",
+                  "url": "/askmama",
+                  "ip": "192.168.0.2",
+                  "hostname": "localhost",
+                  "subcode": "1",
+                  "gid": "k11",
+                  "ff_gate": "___MISS___",
+                  "type": "formal",
+                  "method": "GET"
+                },
+                "ts": "2020-01-01T00:59:49.128Z"}
+  - do:
+      index:
+        index: "test_tsdb12_yoyo"
+        id: "02B521ed703599124"
+        routing: "yo_kakaabc_count"
+        body: { "field": { "count": 16.0 },
+                "metric": "yo_kakaabc_count",
+                "tag": {
+                  "code": "300",
+                  "login_gate": "___MISS___",
+                  "url": "/askmama",
+                  "ip": "192.168.0.1",
+                  "hostname": "localhost",
+                  "subcode": "1",
+                  "gid": "k11",
+                  "ff_gate": "___MISS___",
+                  "type": "formal",
+                  "method": "GET"
+                },
+                "ts": "2020-01-01T01:59:29.128Z"}
+  - do:
+      index:
+        index: "test_tsdb12_yoyo"
+        id: "02B521ed703599123"
+        routing: "yo_kakaabc_count"
+        body: { "field": { "count": 16.0 },
+                "metric": "yo_kakaabc_count",
+                "tag": {
+                  "code": "300",
+                  "login_gate": "___MISS___",
+                  "url": "/askmama",
+                  "ip": "192.168.0.4",
+                  "hostname": "localhost",
+                  "subcode": "1",
+                  "gid": "k11",
+                  "ff_gate": "___MISS___",
+                  "type": "formal",
+                  "method": "GET"
+                },
+                "ts": "2020-01-01T01:59:39.128Z"}
+  - do:
+      index:
+        index: "test_tsdb12_yoyo"
+        id: "02B521ed703599122"
+        routing: "yo_kakaabc_count"
+        body: { "field": { "count": 16.0 },
+                "metric": "yo_kakaabc_count",
+                "tag": {
+                  "code": "200",
+                  "login_gate": "___MISS___",
+                  "url": "/askmama",
+                  "ip": "192.168.0.4",
+                  "hostname": "localhost",
+                  "subcode": "1",
+                  "gid": "k11",
+                  "ff_gate": "___MISS___",
+                  "type": "formal",
+                  "method": "GET"
+                },
+                "ts": "2020-01-01T01:59:49.128Z"}
+  - do:
+      index:
+        index: "test_tsdb12_yoyo"
+        id: "02B521ed703599121"
+        routing: "yo_kakaabc_count"
+        body: { "field": { "count": 16.0 },
+                "metric": "yo_kakaabc_count",
+                "tag": {
+                  "code": "400",
+                  "login_gate": "___MISS___",
+                  "url": "/askmama",
+                  "ip": "192.168.0.1",
+                  "hostname": "localhost",
+                  "subcode": "1",
+                  "gid": "k11",
+                  "ff_gate": "___MISS___",
+                  "type": "formal",
+                  "method": "GET"
+                },
+                "ts": "2020-01-01T01:59:19.128Z"}
+  - do:
+      index:
+        index: "test_tsdb12_yoyo"
+        id: "02B521ed703599120"
+        routing: "yo_kakaabc_count"
+        body: { "field": { "count": 16.0 },
+                "metric": "yo_kakaabc_count",
+                "tag": {
+                  "code": "400",
+                  "login_gate": "___MISS___",
+                  "url": "/askmama",
+                  "ip": "192.168.0.1",
+                  "hostname": "localhost",
+                  "subcode": "1",
+                  "gid": "k11",
+                  "ff_gate": "___MISS___",
+                  "type": "formal",
+                  "method": "GET"
+                },
+                "ts": "2020-01-01T01:59:59.128Z"}
+  - do:
+      indices.refresh: {}
+  # basic test
+  - do:
+      search:
+        rest_total_hits_as_int: true
+        body: {
+          "size": 1
+        }
+
+  - match: { hits.total: 9 }
+
+  # aggs test
+  - do:
+      search:
+        rest_total_hits_as_int: true
+        body: {
+          "query": {
+            "bool": {
+              "filter": [
+              {
+                "term": {
+                  "metric": "yo_kakaabc_count"
+                }
+              },
+              {
+                "range": {
+                  "ts": {
+                    "gte": "2020-01-01T00:00:00",
+                    "lte": "2020-01-02T00:00:00"
+                  }
+                }
+              }
+              ]
+            }
+          },
+          "aggs": {
+            "code": {
+              "terms": {
+                "field": "tag.code"
+              },
+              "aggs": {
+                "ts": {
+                  "date_histogram": {
+                    "field": "ts",
+                    "fixed_interval": "10s",
+                    "min_doc_count": 1
+                  },
+                  "aggs": {
+                    "res": {
+                      "sum": {
+                        "field": "field.count"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "size": 0
+        }
+  - match: { hits.total: 9 }
+  - match: { aggregations.code.buckets.0.key: "400" }
+  - match: { aggregations.code.buckets.0.doc_count: 4 }
+  - match: { aggregations.code.buckets.0.ts.buckets.0.key_as_string: "2020-01-01T00:59:30.000Z" }
+
+  # aggs test
+  - do:
+      search:
+        rest_total_hits_as_int: true
+        body: {
+          "query": {
+            "bool": {
+              "filter": [
+              {
+                "term": {
+                  "metric": "yo_kakaabc_count"
+                }
+              },
+              {
+                "range": {
+                  "ts": {
+                    "gte": "2020-01-01T00:00:00",
+                    "lte": "2020-01-02T00:00:00"
+                  }
+                }
+              }
+              ]
+            }
+          },
+          "aggs": {
+            "topk": {
+              "bucket_topk": {
+                "from": 0,
+                "size": 1,
+                "baseKeyName": "ts",
+                "sort": [
+                {
+                  "code>ts>res": {"order": "desc"}
+                }
+                ]
+              }},
+            "code": {
+              "terms": {
+                "field": "tag.code"
+              },
+              "aggs": {
+                "ts": {
+                  "date_histogram": {
+                    "field": "ts",
+                    "fixed_interval": "10s",
+                    "min_doc_count": 1
+                  },
+                  "aggs": {
+                    "res": {
+                      "sum": {
+                        "field": "field.count"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "size": 0
+        }
+  - match: { hits.total: 9 }

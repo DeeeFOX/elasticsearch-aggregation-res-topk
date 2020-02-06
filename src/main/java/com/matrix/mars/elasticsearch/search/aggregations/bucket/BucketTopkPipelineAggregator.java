@@ -4,22 +4,27 @@ import com.google.common.collect.Lists;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.search.DocValueFormat;
-import org.elasticsearch.search.aggregations.*;
+import org.elasticsearch.search.aggregations.Aggregations;
+import org.elasticsearch.search.aggregations.InternalAggregation;
+import org.elasticsearch.search.aggregations.InternalAggregations;
+import org.elasticsearch.search.aggregations.InternalMultiBucketAggregation;
 import org.elasticsearch.search.aggregations.bucket.InternalSingleBucketAggregation;
 import org.elasticsearch.search.aggregations.bucket.MultiBucketsAggregation;
-import org.elasticsearch.search.aggregations.pipeline.BucketHelpers;
-import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
+import org.elasticsearch.search.aggregations.pipeline.SiblingPipelineAggregator;
 import org.elasticsearch.search.aggregations.support.AggregationPath;
 import org.elasticsearch.search.sort.FieldSortBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Arrays;
 
-public class BucketTopkPipelineAggregator extends PipelineAggregator {
+public class BucketTopkPipelineAggregator extends SiblingPipelineAggregator {
     private final int from;
     private final Integer size;
-    private final BucketHelpers.GapPolicy gapPolicy;
     private final String baseKeyName;
     private final FieldSortBuilder sort;
     private final DocValueFormat format;
@@ -30,32 +35,29 @@ public class BucketTopkPipelineAggregator extends PipelineAggregator {
      * Should follow the parameters sequence
      */
     public BucketTopkPipelineAggregator(StreamInput in) throws IOException {
-        super(in);
+        super(in.readString(), in.readStringArray(), in.readMap());
         from = in.readVInt();
         size = in.readOptionalVInt();
-        gapPolicy = BucketHelpers.GapPolicy.readFrom(in);
         baseKeyName = in.readString();
         sort = in.readList(FieldSortBuilder::new).get(0);
-        this.format = new DocValueFormat.Decimal("###.###");
+        format = DocValueFormat.RAW;
     }
 
     protected BucketTopkPipelineAggregator(
-            String name, String[] bucketsPaths, Map<String, Object> metaData, int from, Integer size, BucketHelpers.GapPolicy gapPolicy,
+            String name, String[] bucketsPaths, Map<String, Object> metaData, int from, Integer size,
             String baseKeyName, List<FieldSortBuilder> sorts) {
         super(name, bucketsPaths, metaData);
         this.from = from;
         this.size = size;
-        this.gapPolicy = gapPolicy;
         this.baseKeyName = baseKeyName;
         this.sort = sorts.get(0);
-        this.format = new DocValueFormat.Decimal("###.###");
+        this.format = DocValueFormat.RAW;
     }
 
     @Override
     protected void doWriteTo(StreamOutput out) throws IOException {
         out.writeVInt(from);
         out.writeOptionalVInt(size);
-        gapPolicy.writeTo(out);
         out.writeString(baseKeyName);
         List<FieldSortBuilder> sorts = new ArrayList<>();
         sorts.add(this.sort);
@@ -91,22 +93,25 @@ public class BucketTopkPipelineAggregator extends PipelineAggregator {
         int reverseMul = sort.order() == SortOrder.ASC ? 1 : -1;
         int[] reverseMuls = new int[1];
         reverseMuls[0] = reverseMul;
-        List<String > sourceNames = Lists.newArrayListWithCapacity(1);
+        List<String> sourceNames = Lists.newArrayListWithCapacity(1);
         sourceNames.add(baseKeyName);
         List<DocValueFormat> formats = Lists.newArrayListWithCapacity(1);
         formats.add(format);
-        for(TopkTree tree: this.topkForest.values()) {
+        for (TopkTree tree : this.topkForest.values()) {
 
-            for (TopkTree.TopkTreeNode treeNode: tree.getNodes()) {
+            for (TopkTree.TopkTreeNode treeNode : tree.getNodes()) {
                 List<InternalAggregation> aggs = Lists.newArrayListWithCapacity(1);
                 aggs.add(treeNode.getOrgAgg());
-                buckets[i] = new InternalBucketTopk.InternalBucket(sourceNames, formats, treeNode.getCompositeKey(), reverseMuls, treeNode.getDocCount(), new InternalAggregations(aggs));
+                buckets[i] = new InternalBucketTopk.InternalBucket(
+                        sourceNames, formats, treeNode.getCompositeKey(), reverseMuls, treeNode.getDocCount(),
+                        new InternalAggregations(aggs));
                 i++;
             }
         }
-        CompositeKey lastBucket = num > 0 ? buckets[num-1].getRawKey() : null;
+        CompositeKey lastBucket = num > 0 ? buckets[num - 1].getRawKey() : null;
         return new InternalBucketTopk(
-                baseKeyName, num, sourceNames, formats, Arrays.asList(buckets), lastBucket, reverseMuls, Lists.newArrayListWithCapacity(0), metaData());
+                baseKeyName, num, sourceNames, formats, Arrays.asList(buckets), lastBucket, reverseMuls,
+                Lists.newArrayListWithCapacity(0), metaData());
     }
 
     /**
@@ -114,7 +119,7 @@ public class BucketTopkPipelineAggregator extends PipelineAggregator {
      * the key and metric value for this bucket
      */
     protected void collectBucketValue(int treeSize, Aggregations aggregations, List<String> bucketsPath) {
-        TopkTree.fromInternalAggregation(topkForest, aggregations, bucketsPath, null, gapPolicy, baseKeyName, null, treeSize, sort);
+        TopkTree.fromInternalAggregation(topkForest, aggregations, bucketsPath, null, baseKeyName, null, treeSize, sort);
     }
 
 

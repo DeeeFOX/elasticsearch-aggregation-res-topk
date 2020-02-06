@@ -12,14 +12,18 @@ import org.elasticsearch.search.DocValueFormat;
 import org.elasticsearch.search.aggregations.AggregationBuilder;
 import org.elasticsearch.search.aggregations.AggregatorFactory;
 import org.elasticsearch.search.aggregations.PipelineAggregationBuilder;
-import org.elasticsearch.search.aggregations.pipeline.*;
-import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.search.aggregations.pipeline.BucketMetricsPipelineAggregationBuilder;
+import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
 import org.elasticsearch.search.sort.FieldSortBuilder;
 import org.elasticsearch.search.sort.SortBuilder;
 
-
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Arrays;
+import java.util.Objects;
 
 import static org.elasticsearch.common.xcontent.ConstructingObjectParser.optionalConstructorArg;
 
@@ -30,37 +34,32 @@ import static org.elasticsearch.common.xcontent.ConstructingObjectParser.optiona
  * result bucket list.
  */
 public class BucketTopkPipelineAggregationBuilder extends BucketMetricsPipelineAggregationBuilder<BucketTopkPipelineAggregationBuilder> {
+    // aggregation name
     public static final String NAME = "bucket_topk";
+    // aggregation params
     private static final ParseField FROM = new ParseField("from");
     private static final ParseField SIZE = new ParseField("size");
-    private static final ParseField SORT = new ParseField("sort");
-    private static final ParseField GAP_POLICY = new ParseField("gapPolicy");
     private static final ParseField BASE_KEY_NAME = new ParseField("baseKeyName");
-    private static final ParseField FORMAT = new ParseField("format");
+    private static final ParseField SORT = new ParseField("sort");
 
     private int from = 0;
     private Integer size;
-    private BucketHelpers.GapPolicy gapPolicy = BucketHelpers.GapPolicy.SKIP;
     private String baseKeyName;
     private FieldSortBuilder sort;
     private DocValueFormat format;
 
     @SuppressWarnings("unchecked")
     public static final ConstructingObjectParser<BucketTopkPipelineAggregationBuilder, String> PARSER = new ConstructingObjectParser<>(NAME,
-            false, (a, context) -> new BucketTopkPipelineAggregationBuilder(
-            (String) a[0], (String[]) a[1], (int) a[2], (Integer) a[3], (BucketHelpers.GapPolicy) a[4], (String) a[5], (List<FieldSortBuilder>) a[6]));
+            false, (a, context) -> new BucketTopkPipelineAggregationBuilder(context, (List<FieldSortBuilder>) a[0]));
+//            (int) a[0], (Integer) a[1], (String) a[2], (List<FieldSortBuilder>) a[3]));
 
     static {
         PARSER.declareInt(BucketTopkPipelineAggregationBuilder::from, FROM);
         PARSER.declareInt(BucketTopkPipelineAggregationBuilder::size, SIZE);
-        PARSER.declareField(BucketTopkPipelineAggregationBuilder::gapPolicy, p -> {
-            if (p.currentToken() == XContentParser.Token.VALUE_STRING) {
-                return BucketHelpers.GapPolicy.parse(p.text().toLowerCase(Locale.ROOT), p.getTokenLocation());
-            }
-            throw new IllegalArgumentException("Unsupported token [" + p.currentToken() + "]");
-        }, GAP_POLICY, ObjectParser.ValueType.STRING);
         PARSER.declareString(BucketTopkPipelineAggregationBuilder::baseKeyName, BASE_KEY_NAME);
-        PARSER.declareField(optionalConstructorArg(), (p, c) -> {
+        PARSER.declareField(
+                optionalConstructorArg(),
+                (p, c) -> {
                     List<SortBuilder<?>> sorts = SortBuilder.fromXContent(p);
                     List<FieldSortBuilder> fieldSorts = new ArrayList<>(sorts.size());
                     for (SortBuilder<?> sort : sorts) {
@@ -71,20 +70,20 @@ public class BucketTopkPipelineAggregationBuilder extends BucketMetricsPipelineA
                         fieldSorts.add((FieldSortBuilder) sort);
                     }
                     return fieldSorts;
-                }, SearchSourceBuilder.SORT_FIELD,
+                },
+                SORT,
                 ObjectParser.ValueType.OBJECT_ARRAY);
     }
 
-
+    /**
+     * Read from PARSER
+     * @param name Name of the aggregator
+     * @param sorts The only one parameters that parsed by declareField
+     */
     public BucketTopkPipelineAggregationBuilder(
-            String name, String[] bucketsPaths, int from, Integer size, BucketHelpers.GapPolicy gapPolicy,
-            String baseKeyName, List<FieldSortBuilder> sorts) {
-        super(name, NAME, bucketsPaths);
-        this.from = from;
-        this.size = size;
-        this.gapPolicy = gapPolicy;
-        this.baseKeyName = baseKeyName;
-        this.sort = sorts.get(0);
+            String name, List<FieldSortBuilder> sorts) {
+        super(name, NAME, sorts == null ? new String[0] : sorts.stream().map(s -> s.getFieldName()).toArray(String[]::new));
+        this.sort = sorts == null || sorts.size()== 0 ? null : sorts.get(0);
         this.format = new DocValueFormat.Decimal("###.###");
     }
 
@@ -95,17 +94,25 @@ public class BucketTopkPipelineAggregationBuilder extends BucketMetricsPipelineA
         super(in, NAME);
         from = in.readVInt();
         size = in.readOptionalVInt();
-        gapPolicy = BucketHelpers.GapPolicy.readFrom(in);
         baseKeyName = in.readString();
         sort = in.readList(FieldSortBuilder::new).get(0);
         format = new DocValueFormat.Decimal("###.###");
     }
 
+//    @Override
+//    protected void doWriteTo(StreamOutput out) throws IOException {
+//        out.writeVInt(from);
+//        out.writeOptionalVInt(size);
+//        out.writeString(baseKeyName);
+//        List<FieldSortBuilder> sorts = new ArrayList<>();
+//        sorts.add(this.sort);
+//        out.writeList(sorts);
+//    }
+
     @Override
     protected void innerWriteTo(StreamOutput out) throws IOException {
         out.writeVInt(from);
         out.writeOptionalVInt(size);
-        gapPolicy.writeTo(out);
         out.writeString(baseKeyName);
         List<FieldSortBuilder> sorts = new ArrayList<>();
         sorts.add(this.sort);
@@ -128,14 +135,6 @@ public class BucketTopkPipelineAggregationBuilder extends BucketMetricsPipelineA
         return this;
     }
 
-    public BucketTopkPipelineAggregationBuilder gapPolicy(BucketHelpers.GapPolicy gapPolicy) {
-        if (gapPolicy == null) {
-            throw new IllegalArgumentException("[" + GAP_POLICY.getPreferredName() + "] must not be null: [" + name + "]");
-        }
-        this.gapPolicy = gapPolicy;
-        return this;
-    }
-
     public BucketTopkPipelineAggregationBuilder baseKeyName(String baseKeyName) {
         this.baseKeyName = baseKeyName;
         return this;
@@ -145,7 +144,7 @@ public class BucketTopkPipelineAggregationBuilder extends BucketMetricsPipelineA
     protected PipelineAggregator createInternal(Map<String, Object> metaData) {
         List<FieldSortBuilder> sorts = Lists.newArrayListWithCapacity(1);
         sorts.add(sort);
-        return new BucketTopkPipelineAggregator(name, bucketsPaths, metaData, from, size, gapPolicy, baseKeyName, sorts);
+        return new BucketTopkPipelineAggregator(name, bucketsPaths, metaData, from, size, baseKeyName, sorts);
     }
 
     @Override
@@ -153,21 +152,41 @@ public class BucketTopkPipelineAggregationBuilder extends BucketMetricsPipelineA
                            Collection<PipelineAggregationBuilder> pipelineAggregatoractories) {
         if (sort == null && size == null && from == 0) {
             throw new IllegalStateException("[" + name + "] is configured to perform nothing. Please set either of "
-                    + Arrays.asList(SearchSourceBuilder.SORT_FIELD.getPreferredName(), SIZE.getPreferredName(), FROM.getPreferredName())
+                    + Arrays.asList(SORT.getPreferredName(), SIZE.getPreferredName(), FROM.getPreferredName())
                     + " to use " + NAME);
         }
     }
+
+    /**
+     * It should follow the sequence declare at the PARSER
+     * @param builder 创建参数builder
+     * @param params 传入参数集合
+     * @return XContentBuilder
+     * @throws IOException From XContentBuilder::field
+     */
+//    @Override
+//    protected XContentBuilder internalXContent(XContentBuilder builder, Params params) throws IOException {
+//        List<FieldSortBuilder> sorts = Lists.newArrayListWithCapacity(1);
+//        sorts.add(sort);
+//        builder.field(FROM.getPreferredName(), from);
+//        if (size != null) {
+//            builder.field(SIZE.getPreferredName(), size);
+//        }
+//        builder.field(BASE_KEY_NAME.getPreferredName(), baseKeyName);
+//        builder.field(SORT.getPreferredName(), sorts);
+//        return builder;
+//    }
 
     @Override
     protected XContentBuilder doXContentBody(XContentBuilder builder, Params params) throws IOException {
         List<FieldSortBuilder> sorts = Lists.newArrayListWithCapacity(1);
         sorts.add(sort);
-        builder.field(SearchSourceBuilder.SORT_FIELD.getPreferredName(), sorts);
         builder.field(FROM.getPreferredName(), from);
         if (size != null) {
             builder.field(SIZE.getPreferredName(), size);
         }
-        builder.field(GAP_POLICY.getPreferredName(), gapPolicy);
+        builder.field(BASE_KEY_NAME.getPreferredName(), baseKeyName);
+        builder.field(SORT.getPreferredName(), sorts);
         return builder;
     }
 
@@ -184,7 +203,7 @@ public class BucketTopkPipelineAggregationBuilder extends BucketMetricsPipelineA
     public int hashCode() {
         List<FieldSortBuilder> sorts = Lists.newArrayListWithCapacity(1);
         sorts.add(sort);
-        return Objects.hash(super.hashCode(), sorts, from, size, gapPolicy);
+        return Objects.hash(super.hashCode(), sorts, from, size);
     }
 
     @Override
@@ -199,8 +218,8 @@ public class BucketTopkPipelineAggregationBuilder extends BucketMetricsPipelineA
         otherSorts.add(other.sort);
         return Objects.equals(sorts, otherSorts)
                 && Objects.equals(from, other.from)
-                && Objects.equals(size, other.size)
-                && Objects.equals(gapPolicy, other.gapPolicy);
+                && Objects.equals(size, other.size);
+//                && Objects.equals(gapPolicy, other.gapPolicy);
     }
 
     @Override

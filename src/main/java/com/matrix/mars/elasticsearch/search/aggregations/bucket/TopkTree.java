@@ -2,9 +2,6 @@ package com.matrix.mars.elasticsearch.search.aggregations.bucket;
 
 import com.google.common.collect.MinMaxPriorityQueue;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.common.io.stream.StreamInput;
-import org.elasticsearch.common.io.stream.StreamOutput;
-import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.search.aggregations.Aggregation;
 import org.elasticsearch.search.aggregations.Aggregations;
 import org.elasticsearch.search.aggregations.InternalAggregation;
@@ -13,8 +10,12 @@ import org.elasticsearch.search.aggregations.pipeline.BucketHelpers;
 import org.elasticsearch.search.sort.FieldSortBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 
-import java.io.IOException;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.Comparator;
+
+import static org.elasticsearch.search.aggregations.pipeline.BucketHelpers.GapPolicy.SKIP;
 
 public class TopkTree {
     private final String keyName;
@@ -32,7 +33,8 @@ public class TopkTree {
 
     public boolean addNode(TopkTreeNode treeNode) {
         if (null == tree) {
-            tree = MinMaxPriorityQueue.orderedBy(this.sort.order() == SortOrder.DESC ? new TopkTreeNodeComparator().reversed() : new TopkTreeNodeComparator())
+            tree = MinMaxPriorityQueue.orderedBy(
+                    this.sort.order() == SortOrder.DESC ? new TopkTreeNodeComparator().reversed() : new TopkTreeNodeComparator())
                     .maximumSize(this.size)
                     .create();
         }
@@ -57,7 +59,8 @@ public class TopkTree {
 
     public static void fromInternalAggregation(
             Map<String, TopkTree> topkForest,
-            Aggregations aggregations, List<String> bucketsPath, TopkTreeNode parTopkTreeNode, BucketHelpers.GapPolicy gapPolicy, String baseKeyName, String baseKeyValue, int treeSize, FieldSortBuilder sort) {
+            Aggregations aggregations, List<String> bucketsPath, TopkTreeNode parTopkTreeNode,
+            String baseKeyName, String baseKeyValue, int treeSize, FieldSortBuilder sort) {
         String keyName = bucketsPath.get(0);
         String treeKey = baseKeyValue;
         for (Aggregation aggregation : aggregations) {
@@ -68,7 +71,7 @@ public class TopkTree {
                 List<? extends InternalMultiBucketAggregation.InternalBucket> buckets = multiBucketsAgg.getBuckets();
                 if (bucketsPath.size() == 2) {
                     for (InternalMultiBucketAggregation.InternalBucket bucket : buckets) {
-                        Double bucketValue = BucketHelpers.resolveBucketValue(multiBucketsAgg, bucket, sublistedPath, gapPolicy);
+                        Double bucketValue = BucketHelpers.resolveBucketValue(multiBucketsAgg, bucket, sublistedPath, SKIP);
                         if (bucketValue != null && !Double.isNaN(bucketValue)) {
                             if (keyName.equals(baseKeyName) || baseKeyValue == null) {
                                 treeKey = bucket.getKeyAsString();
@@ -97,11 +100,13 @@ public class TopkTree {
                             treeKey = bucket.getKeyAsString();
                         }
                         if (null == parTopkTreeNode) {
-                            fromInternalAggregation(topkForest, subAggs, sublistedPath, new TopkTreeNode(keyName, keyVal), gapPolicy, baseKeyName, treeKey, treeSize, sort);
+                            fromInternalAggregation(topkForest, subAggs, sublistedPath,
+                                    new TopkTreeNode(keyName, keyVal), baseKeyName, treeKey, treeSize, sort);
                         } else {
                             TopkTreeNode childTopkTreeNode = parTopkTreeNode.deepCopy();
                             childTopkTreeNode.putNodeKV(keyName, keyVal);
-                            fromInternalAggregation(topkForest, subAggs, sublistedPath, childTopkTreeNode, gapPolicy, baseKeyName, treeKey, treeSize, sort);
+                            fromInternalAggregation(
+                                    topkForest, subAggs, sublistedPath, childTopkTreeNode, baseKeyName, treeKey, treeSize, sort);
                         }
                     }
                 }

@@ -6,19 +6,33 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.search.DocValueFormat;
-import org.elasticsearch.search.aggregations.*;
+import org.elasticsearch.search.aggregations.InternalAggregation;
+import org.elasticsearch.search.aggregations.InternalAggregations;
+import org.elasticsearch.search.aggregations.InternalMultiBucketAggregation;
+import org.elasticsearch.search.aggregations.KeyComparable;
+import org.elasticsearch.search.aggregations.Aggregations;
 import org.elasticsearch.search.aggregations.bucket.composite.CompositeAggregation;
 import org.elasticsearch.search.aggregations.bucket.composite.CompositeAggregationBuilder;
 import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Arrays;
+import java.util.PriorityQueue;
+import java.util.Iterator;
+import java.util.AbstractMap;
+import java.util.Set;
+import java.util.AbstractSet;
 
 /**
  * An internal implementation of {@link InternalMultiBucketAggregation} which extends {@link InternalMultiBucketAggregation}.
  * Mainly, returns the builder and makes the reduce of buckets.
  */
-public class InternalBucketTopk extends InternalMultiBucketAggregation<InternalBucketTopk, InternalBucketTopk.InternalBucket> implements CompositeAggregation {
+public class InternalBucketTopk extends InternalMultiBucketAggregation<
+        InternalBucketTopk, InternalBucketTopk.InternalBucket> implements CompositeAggregation {
 
     private final int size;
     private final List<InternalBucketTopk.InternalBucket> buckets;
@@ -28,8 +42,8 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<InternalB
     private final List<DocValueFormat> formats;
 
     InternalBucketTopk(String name, int size, List<String> sourceNames, List<DocValueFormat> formats,
-                      List<InternalBucketTopk.InternalBucket> buckets, CompositeKey afterKey, int[] reverseMuls,
-                      List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) {
+                       List<InternalBucketTopk.InternalBucket> buckets, CompositeKey afterKey, int[] reverseMuls,
+                       List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) {
         super(name, pipelineAggregators, metaData);
         this.sourceNames = sourceNames;
         this.formats = formats;
@@ -56,7 +70,7 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<InternalB
         if (in.getVersion().onOrAfter(Version.V_6_3_0)) {
             this.afterKey = in.readBoolean() ? new CompositeKey(in) : null;
         } else {
-            this.afterKey = buckets.size() > 0 ? buckets.get(buckets.size()-1).key : null;
+            this.afterKey = buckets.size() > 0 ? buckets.get(buckets.size() - 1).key : null;
         }
     }
 
@@ -163,7 +177,7 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<InternalB
             reduceContext.consumeBucketsAndMaybeBreak(1);
             result.add(reduceBucket);
         }
-        final CompositeKey lastKey = result.size() > 0 ? result.get(result.size()-1).getRawKey() : null;
+        final CompositeKey lastKey = result.size() > 0 ? result.get(result.size() - 1).getRawKey() : null;
         return new InternalBucketTopk(name, size, sourceNames, formats, result, lastKey, reverseMuls, pipelineAggregators(), metaData);
     }
 
@@ -217,7 +231,7 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<InternalB
     }
 
     public static class InternalBucket extends InternalMultiBucketAggregation.InternalBucket
-            implements CompositeAggregation.Bucket, KeyComparable<InternalBucketTopk.InternalBucket> {
+            implements CompositeAggregation.Bucket, KeyComparable<InternalBucket> {
 
         private final CompositeKey key;
         private final long docCount;
@@ -406,6 +420,7 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<InternalB
                 public Iterator<Entry<String, Object>> iterator() {
                     return new Iterator<Entry<String, Object>>() {
                         int pos = 0;
+
                         @Override
                         public boolean hasNext() {
                             return pos < values.length;
@@ -415,7 +430,7 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<InternalB
                         public Entry<String, Object> next() {
                             SimpleEntry<String, Object> entry =
                                     new SimpleEntry<>(keys.get(pos), formatObject(values[pos], formats.get(pos)));
-                            ++ pos;
+                            ++pos;
                             return entry;
                         }
                     };
