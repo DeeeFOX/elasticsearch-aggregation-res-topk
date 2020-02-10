@@ -1,9 +1,10 @@
-package com.matrix.mars.elasticsearch.search.aggregations.bucket;
+package com.matrix.mars.elasticsearch.search.aggregation.bucket.topk;
 
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.Version;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
+import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.search.DocValueFormat;
 import org.elasticsearch.search.aggregations.InternalAggregation;
@@ -11,8 +12,6 @@ import org.elasticsearch.search.aggregations.InternalAggregations;
 import org.elasticsearch.search.aggregations.InternalMultiBucketAggregation;
 import org.elasticsearch.search.aggregations.KeyComparable;
 import org.elasticsearch.search.aggregations.Aggregations;
-import org.elasticsearch.search.aggregations.bucket.composite.CompositeAggregation;
-import org.elasticsearch.search.aggregations.bucket.composite.CompositeAggregationBuilder;
 import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
 
 import java.io.IOException;
@@ -20,7 +19,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Arrays;
 import java.util.PriorityQueue;
 import java.util.Iterator;
 import java.util.AbstractMap;
@@ -28,137 +26,117 @@ import java.util.Set;
 import java.util.AbstractSet;
 
 /**
- * An internal implementation of {@link InternalMultiBucketAggregation} which extends {@link InternalMultiBucketAggregation}.
- * Mainly, returns the builder and makes the reduce of buckets.
+ * Inspired by InternalComposite
  */
-public class InternalBucketTopk extends InternalMultiBucketAggregation<
-        InternalBucketTopk, InternalBucketTopk.InternalBucket> implements CompositeAggregation {
+public class InternalTopk extends InternalMultiBucketAggregation<InternalTopk, InternalTopk.InternalBucket> implements TopkAggregation {
 
+    private final int from;
     private final int size;
-    private final List<InternalBucketTopk.InternalBucket> buckets;
-    private final CompositeKey afterKey;
-    private final int[] reverseMuls;
+    private final List<InternalBucket> buckets;
+    private final int[] sourceReverseMuls;
     private final List<String> sourceNames;
-    private final List<DocValueFormat> formats;
+    private final List<DocValueFormat> sourceFormats;
 
-    InternalBucketTopk(String name, int size, List<String> sourceNames, List<DocValueFormat> formats,
-                       List<InternalBucketTopk.InternalBucket> buckets, CompositeKey afterKey, int[] reverseMuls,
-                       List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) {
+    public InternalTopk(String name, int from, int size, List<String> sourceNames, List<DocValueFormat> sourceFormats,
+                        List<InternalBucket> buckets, int[] sourceReverseMuls,
+                        List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) {
         super(name, pipelineAggregators, metaData);
         this.sourceNames = sourceNames;
-        this.formats = formats;
+        this.sourceFormats = sourceFormats;
         this.buckets = buckets;
-        this.afterKey = afterKey;
         this.size = size;
-        this.reverseMuls = reverseMuls;
+        this.from = from;
+        this.sourceReverseMuls = sourceReverseMuls;
     }
 
-    public InternalBucketTopk(StreamInput in) throws IOException {
+    protected InternalTopk(StreamInput in) throws IOException {
         super(in);
+        this.from = in.readVInt();
         this.size = in.readVInt();
         this.sourceNames = in.readStringList();
-        this.formats = new ArrayList<>(sourceNames.size());
+        this.sourceFormats = new ArrayList<>(sourceNames.size());
         for (int i = 0; i < sourceNames.size(); i++) {
             if (in.getVersion().onOrAfter(Version.V_6_3_0)) {
-                formats.add(in.readNamedWriteable(DocValueFormat.class));
+                sourceFormats.add(in.readNamedWriteable(DocValueFormat.class));
             } else {
-                formats.add(DocValueFormat.RAW);
+                sourceFormats.add(DocValueFormat.RAW);
             }
         }
-        this.reverseMuls = in.readIntArray();
-        this.buckets = in.readList((input) -> new InternalBucketTopk.InternalBucket(input, sourceNames, formats, reverseMuls));
-        if (in.getVersion().onOrAfter(Version.V_6_3_0)) {
-            this.afterKey = in.readBoolean() ? new CompositeKey(in) : null;
-        } else {
-            this.afterKey = buckets.size() > 0 ? buckets.get(buckets.size() - 1).key : null;
-        }
+        this.sourceReverseMuls = in.readIntArray();
+        this.buckets = in.readList((input) -> new InternalBucket(input, sourceNames, sourceFormats, sourceReverseMuls));
     }
 
     @Override
-    protected void doWriteTo(StreamOutput out) throws IOException {
-        out.writeVInt(size);
-        out.writeStringCollection(sourceNames);
-        if (out.getVersion().onOrAfter(Version.V_6_3_0)) {
-            for (DocValueFormat format : formats) {
-                out.writeNamedWriteable(format);
-            }
-        }
-        out.writeIntArray(reverseMuls);
-        out.writeList(buckets);
-        if (out.getVersion().onOrAfter(Version.V_6_3_0)) {
-            out.writeBoolean(afterKey != null);
-            if (afterKey != null) {
-                afterKey.writeTo(out);
-            }
-        }
-    }
-
-    @Override
-    public XContentBuilder doXContentBody(XContentBuilder builder, Params params) throws IOException {
-        return CompositeAggregation.toXContentFragment(this, builder, params);
-    }
-
-    @Override
-    public String getWriteableName() {
-        return CompositeAggregationBuilder.NAME;
-    }
-
-    @Override
-    public InternalBucketTopk create(List<InternalBucketTopk.InternalBucket> newBuckets) {
+    public InternalTopk create(List<InternalBucket> buckets) {
         /**
          * This is used by pipeline aggregations to filter/remove buckets so we
          * keep the <code>afterKey</code> of the original aggregation in order
          * to be able to retrieve the next page even if all buckets have been filtered.
          */
-        return new InternalBucketTopk(name, size, sourceNames, formats, newBuckets, afterKey,
-                reverseMuls, pipelineAggregators(), getMetaData());
+        return new InternalTopk(name, from, size, sourceNames, sourceFormats, buckets,
+                sourceReverseMuls, pipelineAggregators(), getMetaData());
     }
 
     @Override
-    public InternalBucketTopk.InternalBucket createBucket(InternalAggregations aggregations, InternalBucketTopk.InternalBucket prototype) {
-        return new InternalBucketTopk.InternalBucket(prototype.sourceNames, prototype.formats, prototype.key, prototype.reverseMuls,
+    public InternalBucket createBucket(InternalAggregations aggregations, InternalBucket prototype) {
+        return new InternalBucket(
+                prototype.sourceNames, prototype.sourceFormats, prototype.key, prototype.sourceReverseMuls,
                 prototype.docCount, aggregations);
     }
 
-    public int getSize() {
-        return size;
+    @Override
+    protected InternalBucket reduceBucket(List<InternalBucket> buckets, ReduceContext context) {
+        // TODO
+        // Check if just simple reduce or topk reduce
+        assert buckets.size() > 0;
+        List<InternalAggregations> aggregations = new ArrayList<>(buckets.size());
+        long docCount = 0;
+        for (InternalBucket bucket : buckets) {
+            docCount += bucket.docCount;
+            aggregations.add(bucket.aggregations);
+        }
+        InternalAggregations aggs = InternalAggregations.reduce(aggregations, context);
+        return new InternalBucket(sourceNames, sourceFormats, buckets.get(0).key, sourceReverseMuls, docCount, aggs);
     }
 
     @Override
-    public List<InternalBucketTopk.InternalBucket> getBuckets() {
+    public List<InternalBucket> getBuckets() {
         return buckets;
     }
 
     @Override
-    public Map<String, Object> afterKey() {
-        if (afterKey != null) {
-            return new InternalBucketTopk.ArrayMap(sourceNames, formats, afterKey.values());
+    protected void doWriteTo(StreamOutput out) throws IOException {
+        out.writeVInt(from);
+        out.writeVInt(size);
+        out.writeStringCollection(sourceNames);
+        if (out.getVersion().onOrAfter(Version.V_6_3_0)) {
+            for (DocValueFormat format : sourceFormats) {
+                out.writeNamedWriteable(format);
+            }
         }
-        return null;
-    }
-
-    // Visible for tests
-    int[] getReverseMuls() {
-        return reverseMuls;
+        out.writeIntArray(sourceReverseMuls);
+        out.writeList(buckets);
     }
 
     @Override
     public InternalAggregation doReduce(List<InternalAggregation> aggregations, ReduceContext reduceContext) {
-        PriorityQueue<InternalBucketTopk.BucketIterator> pq = new PriorityQueue<>(aggregations.size());
+        // TODO
+        // Should be a topk k topk reduce not simple reduce
+        PriorityQueue<BucketIterator> pq = new PriorityQueue<>(aggregations.size());
         for (InternalAggregation agg : aggregations) {
-            InternalBucketTopk sortedAgg = (InternalBucketTopk) agg;
-            InternalBucketTopk.BucketIterator it = new InternalBucketTopk.BucketIterator(sortedAgg.buckets);
+            InternalTopk sortedAgg = (InternalTopk) agg;
+            BucketIterator it = new BucketIterator(sortedAgg.buckets);
             if (it.next() != null) {
                 pq.add(it);
             }
         }
-        InternalBucketTopk.InternalBucket lastBucket = null;
-        List<InternalBucketTopk.InternalBucket> buckets = new ArrayList<>();
-        List<InternalBucketTopk.InternalBucket> result = new ArrayList<>();
+        InternalBucket lastBucket = null;
+        List<InternalBucket> buckets = new ArrayList<>();
+        List<InternalBucket> result = new ArrayList<>();
         while (pq.size() > 0) {
-            InternalBucketTopk.BucketIterator bucketIt = pq.poll();
+            BucketIterator bucketIt = pq.poll();
             if (lastBucket != null && bucketIt.current.compareKey(lastBucket) != 0) {
-                InternalBucketTopk.InternalBucket reduceBucket = reduceBucket(buckets, reduceContext);
+                InternalBucket reduceBucket = reduceBucket(buckets, reduceContext);
                 buckets.clear();
                 reduceContext.consumeBucketsAndMaybeBreak(1);
                 result.add(reduceBucket);
@@ -173,120 +151,81 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<
             }
         }
         if (buckets.size() > 0) {
-            InternalBucketTopk.InternalBucket reduceBucket = reduceBucket(buckets, reduceContext);
+            InternalBucket reduceBucket = reduceBucket(buckets, reduceContext);
             reduceContext.consumeBucketsAndMaybeBreak(1);
             result.add(reduceBucket);
         }
-        final CompositeKey lastKey = result.size() > 0 ? result.get(result.size() - 1).getRawKey() : null;
-        return new InternalBucketTopk(name, size, sourceNames, formats, result, lastKey, reverseMuls, pipelineAggregators(), metaData);
+        return new InternalTopk(name, from, size, sourceNames, sourceFormats, result, sourceReverseMuls, pipelineAggregators(), metaData);
     }
 
     @Override
-    protected InternalBucketTopk.InternalBucket reduceBucket(List<InternalBucketTopk.InternalBucket> buckets, ReduceContext context) {
-        assert buckets.size() > 0;
-        List<InternalAggregations> aggregations = new ArrayList<>(buckets.size());
-        long docCount = 0;
-        for (InternalBucketTopk.InternalBucket bucket : buckets) {
-            docCount += bucket.docCount;
-            aggregations.add(bucket.aggregations);
-        }
-        InternalAggregations aggs = InternalAggregations.reduce(aggregations, context);
-        return new InternalBucketTopk.InternalBucket(sourceNames, formats, buckets.get(0).key, reverseMuls, docCount, aggs);
+    public XContentBuilder doXContentBody(XContentBuilder builder, Params params) throws IOException {
+        return TopkAggregation.toXContentFragment(this, builder, params);
     }
 
     @Override
-    public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (obj == null || getClass() != obj.getClass()) return false;
-        if (super.equals(obj) == false) return false;
-
-        InternalBucketTopk that = (InternalBucketTopk) obj;
-        return Objects.equals(size, that.size) &&
-                Objects.equals(buckets, that.buckets) &&
-                Objects.equals(afterKey, that.afterKey) &&
-                Arrays.equals(reverseMuls, that.reverseMuls);
+    public String getWriteableName() {
+        return TopkAggregationBuilder.NAME;
     }
 
-    @Override
-    public int hashCode() {
-        return Objects.hash(super.hashCode(), size, buckets, afterKey, Arrays.hashCode(reverseMuls));
-    }
+    private static class BucketIterator implements Comparable<InternalTopk.BucketIterator> {
+        final Iterator<InternalBucket> it;
+        InternalBucket current;
 
-    private static class BucketIterator implements Comparable<InternalBucketTopk.BucketIterator> {
-        final Iterator<InternalBucketTopk.InternalBucket> it;
-        InternalBucketTopk.InternalBucket current;
-
-        private BucketIterator(List<InternalBucketTopk.InternalBucket> buckets) {
+        private BucketIterator(List<InternalBucket> buckets) {
             this.it = buckets.iterator();
         }
 
         @Override
-        public int compareTo(InternalBucketTopk.BucketIterator other) {
+        public int compareTo(BucketIterator other) {
             return current.compareKey(other.current);
         }
 
-        InternalBucketTopk.InternalBucket next() {
+        InternalBucket next() {
             return current = it.hasNext() ? it.next() : null;
         }
     }
 
-    public static class InternalBucket extends InternalMultiBucketAggregation.InternalBucket
-            implements CompositeAggregation.Bucket, KeyComparable<InternalBucket> {
+    /**
+     * Inspired by InternalComposite.InternalBucket
+     */
+    public static class InternalBucket
+            extends InternalMultiBucketAggregation.InternalBucket
+            implements TopkAggregation.Bucket, KeyComparable<InternalBucket> {
 
         private final CompositeKey key;
         private final long docCount;
         private final InternalAggregations aggregations;
-        private final transient int[] reverseMuls;
+        private final transient int[] sourceReverseMuls;
         private final transient List<String> sourceNames;
-        private final transient List<DocValueFormat> formats;
+        private final transient List<DocValueFormat> sourceFormats;
 
-
-        InternalBucket(List<String> sourceNames, List<DocValueFormat> formats, CompositeKey key, int[] reverseMuls, long docCount,
-                       InternalAggregations aggregations) {
+        InternalBucket(
+                List<String> sourceNames, List<DocValueFormat> sourceFormats, CompositeKey key,
+                int[] sourceReverseMuls, long docCount, InternalAggregations aggregations) {
             this.key = key;
             this.docCount = docCount;
             this.aggregations = aggregations;
-            this.reverseMuls = reverseMuls;
+            this.sourceReverseMuls = sourceReverseMuls;
             this.sourceNames = sourceNames;
-            this.formats = formats;
+            this.sourceFormats = sourceFormats;
         }
 
-        InternalBucket(StreamInput in, List<String> sourceNames, List<DocValueFormat> formats, int[] reverseMuls) throws IOException {
+        InternalBucket(
+                StreamInput in, List<String> sourceNames,
+                List<DocValueFormat> sourceFormats, int[] sourceReverseMuls) throws IOException {
             this.key = new CompositeKey(in);
             this.docCount = in.readVLong();
             this.aggregations = new InternalAggregations(in);
-            this.reverseMuls = reverseMuls;
+            this.sourceReverseMuls = sourceReverseMuls;
             this.sourceNames = sourceNames;
-            this.formats = formats;
-        }
-
-        @Override
-        public void writeTo(StreamOutput out) throws IOException {
-            key.writeTo(out);
-            out.writeVLong(docCount);
-            aggregations.writeTo(out);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(getClass(), docCount, key, aggregations);
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj == null || getClass() != obj.getClass()) {
-                return false;
-            }
-            InternalBucketTopk.InternalBucket that = (InternalBucketTopk.InternalBucket) obj;
-            return Objects.equals(docCount, that.docCount)
-                    && Objects.equals(key, that.key)
-                    && Objects.equals(aggregations, that.aggregations);
+            this.sourceFormats = sourceFormats;
         }
 
         @Override
         public Map<String, Object> getKey() {
             // returns the formatted key in a map
-            return new InternalBucketTopk.ArrayMap(sourceNames, formats, key.values());
+            return new InternalTopk.ArrayMap(sourceNames, sourceFormats, key.values());
         }
 
         // get the raw key (without formatting to preserve the natural order).
@@ -305,7 +244,7 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<
                 }
                 builder.append(sourceNames.get(i));
                 builder.append('=');
-                builder.append(formatObject(key.get(i), formats.get(i)));
+                builder.append(formatObject(key.get(i), sourceFormats.get(i)));
             }
             builder.append('}');
             return builder.toString();
@@ -321,20 +260,47 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<
             return aggregations;
         }
 
+        /**
+         * This allows them to be "thrown across the wire" using Elasticsearch's internal protocol
+         * see {@link Writeable}
+         */
         @Override
-        public int compareKey(InternalBucketTopk.InternalBucket other) {
+        public void writeTo(StreamOutput out) throws IOException {
+            key.writeTo(out);
+            out.writeVLong(docCount);
+            aggregations.writeTo(out);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(getClass(), docCount, key, aggregations);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == null || getClass() != obj.getClass()) {
+                return false;
+            }
+            InternalTopk.InternalBucket that = (InternalTopk.InternalBucket) obj;
+            return Objects.equals(docCount, that.docCount)
+                    && Objects.equals(key, that.key)
+                    && Objects.equals(aggregations, that.aggregations);
+        }
+
+        @Override
+        public int compareKey(InternalBucket other) {
             for (int i = 0; i < key.size(); i++) {
                 if (key.get(i) == null) {
                     if (other.key.get(i) == null) {
                         continue;
                     }
-                    return -1 * reverseMuls[i];
+                    return -1 * sourceReverseMuls[i];
                 } else if (other.key.get(i) == null) {
-                    return reverseMuls[i];
+                    return sourceReverseMuls[i];
                 }
                 assert key.get(i).getClass() == other.key.get(i).getClass();
                 @SuppressWarnings("unchecked")
-                int cmp = key.get(i).compareTo(other.key.get(i)) * reverseMuls[i];
+                int cmp = key.get(i).compareTo(other.key.get(i)) * sourceReverseMuls[i];
                 if (cmp != 0) {
                     return cmp;
                 }
@@ -345,7 +311,7 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<
         @Override
         public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
             /**
-             * See {@link CompositeAggregation#bucketToXContent}
+             * See {@link TopkAggregation#bucketToXContent}
              */
             throw new UnsupportedOperationException("not implemented");
         }
@@ -385,12 +351,17 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<
         return obj;
     }
 
+    /**
+     * Inspired by InternalComposite ArrayMap
+     * Comparable key sets
+     */
     @SuppressWarnings("rawtypes")
-    static class ArrayMap extends AbstractMap<String, Object> implements Comparable<InternalBucketTopk.ArrayMap> {
+    static class ArrayMap extends AbstractMap<String, Object> implements Comparable<InternalTopk.ArrayMap> {
         final List<String> keys;
         final Comparable[] values;
         final List<DocValueFormat> formats;
 
+        @SuppressWarnings("rawtypes")
         ArrayMap(List<String> keys, List<DocValueFormat> formats, Comparable[] values) {
             assert keys.size() == values.length && keys.size() == formats.size();
             this.keys = keys;
@@ -444,7 +415,7 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<
         }
 
         @Override
-        public int compareTo(InternalBucketTopk.ArrayMap that) {
+        public int compareTo(InternalTopk.ArrayMap that) {
             if (that == this) {
                 return 0;
             }

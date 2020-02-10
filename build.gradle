@@ -33,7 +33,7 @@ noticeFile = rootProject.file('README.md')
 esplugin {
     name 'elasticsearch-aggregation-res-topk'
     description 'Sort and choose top K to return of aggregations result'
-    classname 'com.matrix.mars.elasticsearch.plugin.BucketTopkAggregation' // plugin description class path
+    classname 'com.matrix.mars.elasticsearch.plugin.TopkAggregation' // plugin description class path
     licenseFile = rootProject.file('LICENSE')
     noticeFile = rootProject.file('README.md')
 }

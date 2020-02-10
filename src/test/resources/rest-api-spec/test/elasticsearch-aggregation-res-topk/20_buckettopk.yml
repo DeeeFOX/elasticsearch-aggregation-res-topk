@@ -511,14 +511,14 @@ setup:
           "aggs": {
             "topk": {
               "bucket_topk": {
-                "from": 0,
-                "size": 1,
-                "baseKeyName": "ts",
-                "sort": [
+                "from": 1,
+                "size": 2,
+                "base_key_name": "ts",
+                "sort":
                 {
                   "code>ts>res": {"order": "desc"}
                 }
-                ]
+
               }},
             "code": {
               "terms": {

@@ -1,4 +1,4 @@
-package com.matrix.mars.elasticsearch.search.aggregations.bucket;
+package com.matrix.mars.elasticsearch.search.aggregation.bucket.topk;
 
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
