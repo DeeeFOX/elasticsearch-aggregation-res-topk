@@ -273,12 +273,12 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<
             this.key = new CompositeKey(in);
             this.docCount = in.readVLong();
             this.aggregations = new InternalAggregations(in);
+            this.baseKeyValues = new ArrayMap(in);
+            this.orgTreeNode = new TopkForest.TopkTree.TopkTreeNode(in);
             // user defined attributes
             this.keyReverseMuls = keyReverseMuls;
             this.keyNames = keyNames;
             this.keyFormats = keyFormats;
-            this.baseKeyValues = new ArrayMap(in);
-            this.orgTreeNode = new TopkForest.TopkTree.TopkTreeNode(in);
         }
 
         @Override
@@ -287,6 +287,7 @@ public class InternalBucketTopk extends InternalMultiBucketAggregation<
             out.writeVLong(docCount);
             aggregations.writeTo(out);
             baseKeyValues.writeTo(out);
+            orgTreeNode.writeTo(out);
         }
 
         @Override

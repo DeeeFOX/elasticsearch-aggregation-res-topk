@@ -89,7 +89,7 @@ public class BucketTopkPipelineAggregationBuilder extends BucketMetricsPipelineA
     public BucketTopkPipelineAggregationBuilder(StreamInput in) throws IOException {
         super(in, NAME);
         from = in.readVInt();
-        size = in.readOptionalVInt();
+        size = in.readVInt();
         baseKeyName = in.readString();
         sort = new FieldSortBuilder(in);
     }
@@ -97,7 +97,7 @@ public class BucketTopkPipelineAggregationBuilder extends BucketMetricsPipelineA
     @Override
     protected void innerWriteTo(StreamOutput out) throws IOException {
         out.writeVInt(from);
-        out.writeOptionalVInt(size);
+        out.writeVInt(size);
         out.writeString(baseKeyName);
         sort.writeTo(out);
     }

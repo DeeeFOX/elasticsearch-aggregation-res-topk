@@ -76,6 +76,20 @@ public class BucketTopkPipelineAggregator extends SiblingPipelineAggregator {
     }
 
     /**
+     * Write to a stream.
+     * Should follow the parameters sequence
+     * For use of the es nodes' internal communications
+     */
+    @Override
+    protected void doWriteTo(StreamOutput out) throws IOException {
+        out.writeVInt(from);
+        out.writeVInt(size);
+        out.writeString(baseKeyName);
+        sort.writeTo(out);
+
+    }
+
+    /**
      * Construct the aggregator from the {@link BucketTopkPipelineAggregationBuilder}.
      * Should follow the parameters sequence
      */
@@ -103,20 +117,6 @@ public class BucketTopkPipelineAggregator extends SiblingPipelineAggregator {
         }
         bucketsPath = AggregationPath.parse(bucketsPaths()[0]).getPathElementsAsStringList();
         treeSize = from + size;
-    }
-
-    /**
-     * Write to a stream.
-     * Should follow the parameters sequence
-     * For use of the es nodes' internal communications
-     */
-    @Override
-    protected void doWriteTo(StreamOutput out) throws IOException {
-        out.writeVInt(from);
-        out.writeOptionalVInt(size);
-        out.writeString(baseKeyName);
-        sort.writeTo(out);
-
     }
 
     @Override
