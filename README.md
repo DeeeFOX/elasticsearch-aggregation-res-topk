@@ -44,8 +44,8 @@ This is a kind of bucket sort aggregation of pipeline aggregation.
 ### Parameters
 --------------------------
 
-|name|type|required|description|example|
-|:--|:--|:--|:--|:--|
+| name | type | required | description | example |
+| ---- | ---- | -------- | ----------- | ------- |
 |from|int|true|```top k since top n```'s n|1|
 |size|int|true|```top k since top n```'s k|2|
 |base_key_name|str|true|which name of terms aggs to sort on|ts|
