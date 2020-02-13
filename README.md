@@ -1,11 +1,10 @@
 # Elasticsearch Aggregation Result Topk Filter Plugin
-=========================================
 
 This plugin adds the possibility to sort and choose top K to return of aggregations result. Results from every bucket will sort by value and then choose top K as the finally result to return. For a complete example see https://github.com/elastic/elasticsearch/issues/xxxxxxx
 
 This is a kind of bucket sort aggregation of pipeline aggregation.
 
-# Installation
+## Installation
 ------------
 
 * remove
@@ -16,7 +15,7 @@ This is a kind of bucket sort aggregation of pipeline aggregation.
 
     ```${ES_HOME}/bin/elasticsearch-plugin install file:///path/to/elasticsearch-aggregation-res-topk.zip```
 
-# Build
+## Build
 -----
 
 * change to plugin home
@@ -38,7 +37,7 @@ This is a kind of bucket sort aggregation of pipeline aggregation.
     38 actionable tasks: 35 executed, 3 up-to-date
     ```
   
-# Usage
+## Usage
 --------------------------
 
 ### Parameters
@@ -250,7 +249,7 @@ This is a kind of bucket sort aggregation of pipeline aggregation.
       }
     }
     ```
-# Version
+## Version
 --------------------------
 
 Plugin versions are available for (at least) all minor versions of Elasticsearch since 7.4.2
