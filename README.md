@@ -46,10 +46,10 @@ This is a kind of bucket sort aggregation of pipeline aggregation.
 
 |name|type|required|description|example|
 |:--|:--|:--|:--|:--|
-|from|int|true|"top k since top n"'s n|1|
-|size|int|true|"top k since top n"'s k|2|
+|from|int|true|```top k since top n```'s n|1|
+|size|int|true|```top k since top n```'s k|2|
 |base_key_name|str|true|which name of terms aggs to sort on|ts|
-|sort|json|true|order and name of given buckets path to sort|{ "code>ts>res": { "order": "desc" } }|
+|sort|json|true|order and name of given buckets path to sort|```{ "code>ts>res": { "order": "desc" } }```|
 
 ### Examples
 --------------------------
